@@ -12,8 +12,7 @@ output_fast/
 output_pretrained/
 detection_results/
 
-# Model files
-models/
+
 
 # Test images or datasets
 test_images/
