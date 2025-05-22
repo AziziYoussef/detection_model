@@ -1,0 +1,48 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Output folders
+output/
+output_fast/
+output_pretrained/
+detection_results/
+
+# Model files
+models/
+
+# Test images or datasets
+test_images/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# Logs
+*.log
+
+# Images and plots (optional)
+*.png
+
+# VSCode settings
+.vscode/
+
+# PyCharm settings
+.idea/
+
+# Jupyter notebook metadata
+*.nbmetadata
+
+# Dataset folders (if large and reconstructed via script)
+coco/
