@@ -11,8 +11,9 @@ output/
 output_fast/
 output_pretrained/
 detection_results/
-
-
+output_extended_30/
+performance_analysis/
+coco_evaluation/
 
 # Test images or datasets
 test_images/

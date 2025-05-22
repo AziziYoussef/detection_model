@@ -1,48 +1,28 @@
 import os
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torchvision.models.detection as detection_models
 from torch.amp import GradScaler, autocast
 import time
-import random
 import cv2
 import numpy as np
 from pycocotools.coco import COCO
 from torchvision import transforms
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+# Import de la nouvelle configuration
+from config_extended import config
 
 # Optimisations CUDA
 torch.backends.cudnn.benchmark = True
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-# Configuration rapide corrigée (paramètres réduits pour éviter les erreurs de mémoire)
-config = {
-    'num_classes': 10,
-    'batch_size': 4,  # Réduit pour éviter les erreurs de mémoire
-    'learning_rate': 0.005,
-    'num_epochs': 10,
-    'image_size': (320, 320),
-    'use_mixed_precision': True,
-    'max_train_images': 2000,  # Encore plus réduit
-    'max_val_images': 200,     # Réduit
-    'optimizer': 'sgd',
-    'weight_decay': 5e-4,
-    'momentum': 0.9,
-    'num_workers': 0,  # Désactiver le multiprocessing pour éviter les erreurs de mémoire
-    'pin_memory': False,  # Désactiver pour éviter les erreurs de mémoire
-    'coco_dir': 'c:/Users/ay855/Documents/detction_model/coco',
-    'output_dir': 'output_fast',
-    'classes': [
-        'backpack', 'suitcase', 'handbag', 'cell phone', 'laptop',
-        'book', 'umbrella', 'bottle', 'keyboard', 'remote'
-    ]
-}
-
-class LostObjectsDatasetForPretrained(torch.utils.data.Dataset):
-    """Dataset adapté pour les modèles pré-entraînés de torchvision"""
+class LostObjectsDatasetExtended(torch.utils.data.Dataset):
+    """Dataset pour 30 classes d'objets perdus"""
     
     def __init__(self, coco, img_ids, img_dir, class_ids, transform=None):
         self.coco = coco
@@ -68,12 +48,11 @@ class LostObjectsDatasetForPretrained(torch.utils.data.Dataset):
             # Charger l'image
             img = cv2.imread(img_path)
             if img is None:
-                # Image de secours si le chargement échoue
                 img = np.zeros((320, 320, 3), dtype=np.uint8)
             else:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
-            # Redimensionner l'image pour économiser la mémoire
+            # Redimensionner l'image
             img = cv2.resize(img, config['image_size'])
             height, width = img.shape[:2]
             
@@ -93,7 +72,7 @@ class LostObjectsDatasetForPretrained(torch.utils.data.Dataset):
                     x1, y1, w, h = bbox
                     x2, y2 = x1 + w, y1 + h
                     
-                    # Redimensionner les coordonnées selon la nouvelle taille d'image
+                    # Redimensionner les coordonnées
                     orig_width = img_info['width']
                     orig_height = img_info['height']
                     
@@ -160,23 +139,23 @@ def collate_fn(batch):
     return tuple(zip(*batch))
 
 def get_faster_rcnn_model(num_classes):
-    """Utilise Faster R-CNN (plus fiable que SSD MobileNet)"""
+    """Créer le modèle Faster R-CNN pour 30 classes"""
     from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
     
     # Charger le modèle pré-entraîné
     model = detection_models.fasterrcnn_resnet50_fpn(pretrained=True)
     
-    # Adapter la couche de classification
+    # Adapter la couche de classification pour 30 classes + fond
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes + 1)
     
     return model
 
-def train_fast_model(model, train_loader, val_loader, num_epochs=10, device='cuda'):
-    """Entraînement optimisé pour la vitesse"""
+def train_extended_model(model, train_loader, val_loader, num_epochs, device):
+    """Entraînement du modèle avec 30 classes"""
     model.to(device)
     
-    # Optimiseur SGD
+    # Optimiseur avec learning rate adapté
     optimizer = optim.SGD(
         model.parameters(), 
         lr=config['learning_rate'],
@@ -184,19 +163,25 @@ def train_fast_model(model, train_loader, val_loader, num_epochs=10, device='cud
         weight_decay=config['weight_decay']
     )
     
-    # Scheduler adaptatif
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    # Scheduler pour réduire le learning rate
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8, 15], gamma=0.1)
     
-    # Précision mixte corrigée
+    # Précision mixte
     scaler = GradScaler('cuda')
+    
+    # Historique des pertes
+    train_losses = []
+    val_losses = []
     
     for epoch in range(num_epochs):
         start_time = time.time()
-        print(f"Epoch {epoch+1}/{num_epochs}")
+        print(f"\nEpoch {epoch+1}/{num_epochs}")
+        print("="*50)
         
         # Mode entraînement
         model.train()
         running_loss = 0.0
+        valid_batches = 0
         
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
         
@@ -205,7 +190,7 @@ def train_fast_model(model, train_loader, val_loader, num_epochs=10, device='cud
             valid_data = [(img, tgt) for img, tgt in zip(images, targets) if len(tgt['boxes']) > 0]
             
             if not valid_data:
-                continue  # Passer ce batch si aucune donnée valide
+                continue
             
             images, targets = zip(*valid_data)
             images = list(images)
@@ -233,23 +218,33 @@ def train_fast_model(model, train_loader, val_loader, num_epochs=10, device='cud
                 scaler.update()
                 
                 running_loss += losses.item()
+                valid_batches += 1
                 
-                # Affichage
+                # Affichage détaillé
                 progress_bar.set_postfix({
                     'loss': f"{losses.item():.3f}",
-                    'avg_loss': f"{running_loss/(batch_idx+1):.3f}"
+                    'cls': f"{loss_dict.get('loss_classifier', 0):.3f}",
+                    'box': f"{loss_dict.get('loss_box_reg', 0):.3f}",
+                    'obj': f"{loss_dict.get('loss_objectness', 0):.3f}",
+                    'rpn': f"{loss_dict.get('loss_rpn_box_reg', 0):.3f}"
                 })
                 
             except Exception as e:
                 print(f"Erreur dans le batch {batch_idx}: {e}")
                 continue
         
+        # Calculer la perte moyenne de l'époque
+        if valid_batches > 0:
+            epoch_loss = running_loss / valid_batches
+            train_losses.append(epoch_loss)
+        else:
+            epoch_loss = float('inf')
+            train_losses.append(epoch_loss)
+        
         # Temps de l'époque
         epoch_time = time.time() - start_time
-        images_per_sec = len(train_loader.dataset) / epoch_time
-        
-        print(f"Époque {epoch+1} terminée en {epoch_time:.1f}s")
-        print(f"Vitesse: {images_per_sec:.1f} images/sec")
+        print(f"Train Loss: {epoch_loss:.4f}")
+        print(f"Temps d'époque: {epoch_time:.1f}s")
         
         # Validation simplifiée
         model.eval()
@@ -258,7 +253,7 @@ def train_fast_model(model, train_loader, val_loader, num_epochs=10, device='cud
         
         with torch.no_grad():
             for i, (images, targets) in enumerate(val_loader):
-                if i >= 5:  # Limiter à 5 batches pour la validation
+                if i >= 10:  # Limiter à 10 batches pour la validation
                     break
                 
                 # Filtrer les données valides
@@ -282,24 +277,47 @@ def train_fast_model(model, train_loader, val_loader, num_epochs=10, device='cud
                     val_batches += 1
                     model.eval()
                 except Exception as e:
-                    print(f"Erreur en validation: {e}")
                     continue
         
         if val_batches > 0:
             val_loss /= val_batches
+            val_losses.append(val_loss)
             print(f"Validation Loss: {val_loss:.4f}")
         
         # Sauvegarder le modèle
         os.makedirs(config['output_dir'], exist_ok=True)
-        torch.save(model.state_dict(), f"{config['output_dir']}/fast_model_epoch_{epoch+1}.pth")
+        torch.save(model.state_dict(), f"{config['output_dir']}/extended_model_epoch_{epoch+1}.pth")
+        
+        # Sauvegarder le meilleur modèle
+        if epoch == 0 or (val_batches > 0 and val_loss < min(val_losses[:-1] + [float('inf')])):
+            torch.save(model.state_dict(), f"{config['output_dir']}/best_extended_model.pth")
+            print("🏆 Meilleur modèle sauvegardé!")
         
         # Mettre à jour le learning rate
         scheduler.step()
+        
+        # Graphique des pertes
+        if len(train_losses) > 1:
+            plt.figure(figsize=(10, 5))
+            plt.plot(range(1, len(train_losses)+1), train_losses, 'b-', label='Training Loss')
+            if len(val_losses) > 0:
+                plt.plot(range(1, len(val_losses)+1), val_losses, 'r-', label='Validation Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title('Training Progress - 30 Classes Extended Model')
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(f"{config['output_dir']}/training_progress.png")
+            plt.close()
         
         # Libérer la mémoire
         torch.cuda.empty_cache()
 
 def main():
+    print("="*60)
+    print("ENTRAÎNEMENT MODÈLE ÉTENDU - 30 CLASSES D'OBJETS PERDUS")
+    print("="*60)
+    
     # Chemins
     COCO_DIR = config['coco_dir']
     TRAIN_ANN_PATH = os.path.join(COCO_DIR, 'annotations', 'instances_train2017.json')
@@ -308,19 +326,32 @@ def main():
     VAL_IMG_DIR = os.path.join(COCO_DIR, 'images', 'val2017')
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    print(f"Device utilisé: {device}")
+    print(f"Nombre de classes: {config['num_classes']}")
     
     # Charger COCO
     print("Chargement des annotations COCO...")
     train_coco = COCO(TRAIN_ANN_PATH)
     val_coco = COCO(VAL_ANN_PATH)
     
-    # Obtenir les classes
+    # Obtenir les IDs de classes
     class_ids = []
+    missing_classes = []
+    
     for cls in config['classes']:
         cat_ids = train_coco.getCatIds(catNms=[cls])
         if cat_ids:
             class_ids.append(cat_ids[0])
+            print(f"✓ {cls}")
+        else:
+            missing_classes.append(cls)
+            print(f"✗ {cls} (non trouvé dans COCO)")
+    
+    if missing_classes:
+        print(f"\nClasses manquantes: {missing_classes}")
+        print("Le modèle sera entraîné avec les classes disponibles seulement.")
+    
+    print(f"\nClasses finales: {len(class_ids)} classes disponibles")
     
     # Obtenir les images
     def find_images_with_objects(coco, class_ids):
@@ -339,24 +370,24 @@ def main():
     train_img_ids = train_img_ids[:config['max_train_images']]
     val_img_ids = val_img_ids[:config['max_val_images']]
     
-    print(f"Images limitées - Train: {len(train_img_ids)}, Val: {len(val_img_ids)}")
+    print(f"Images - Train: {len(train_img_ids)}, Val: {len(val_img_ids)}")
     
-    # Transformations simplifiées
+    # Transformations
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
     # Créer les datasets
-    train_dataset = LostObjectsDatasetForPretrained(
+    train_dataset = LostObjectsDatasetExtended(
         train_coco, train_img_ids, TRAIN_IMG_DIR, class_ids, transform
     )
     
-    val_dataset = LostObjectsDatasetForPretrained(
+    val_dataset = LostObjectsDatasetExtended(
         val_coco, val_img_ids, VAL_IMG_DIR, class_ids, transform
     )
     
-    # DataLoaders simplifiés (sans multiprocessing pour éviter les erreurs de mémoire)
+    # DataLoaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
@@ -376,12 +407,15 @@ def main():
     )
     
     # Créer le modèle
-    print("Chargement du modèle Faster R-CNN...")
-    model = get_faster_rcnn_model(len(config['classes']))
+    print("Chargement du modèle Faster R-CNN étendu...")
+    model = get_faster_rcnn_model(len(class_ids))
     print("Modèle chargé avec succès!")
     
     # Entraîner
-    train_fast_model(model, train_loader, val_loader, config['num_epochs'], device)
+    train_extended_model(model, train_loader, val_loader, config['num_epochs'], device)
+    
+    print("\n🎉 ENTRAÎNEMENT TERMINÉ!")
+    print(f"Modèles sauvegardés dans: {config['output_dir']}/")
 
 if __name__ == "__main__":
     main()
