@@ -14,6 +14,8 @@ detection_results/
 output_extended_30/
 performance_analysis/
 coco_evaluation/
+videos/
+videos_output/
 
 # Test images or datasets
 test_images/
