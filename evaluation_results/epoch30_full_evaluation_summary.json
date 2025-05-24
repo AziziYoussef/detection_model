@@ -1,0 +1,13 @@
+{
+  "precision": 0.6880316924340817,
+  "recall": 0.5139483590347378,
+  "f1": 0.5025649284298436,
+  "confidence": 0.7597243258889937,
+  "inference_time": 58.824685564630606,
+  "tp": 8357,
+  "fp": 5941,
+  "fn": 13319,
+  "total_images": 3624,
+  "failed_images": 0,
+  "confidence_threshold": 0.6
+}

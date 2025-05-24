@@ -19,7 +19,7 @@ videos_output/
 output_stable_training/
 output_improved_with_persons/
 video_detection_results/
-
+test2017_output/
 # Test images or datasets
 test_images/
 
