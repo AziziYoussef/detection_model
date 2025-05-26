@@ -9,7 +9,7 @@
     "fn": 12448,
     "total_images": 3624,
     "failed_images": 0,
-    "inference_time": 65.38263404079883
+    "inference_time": 49.33942837957252
   },
   "0.55": {
     "precision": 0.6502986286320701,
@@ -21,7 +21,7 @@
     "fn": 12884,
     "total_images": 3624,
     "failed_images": 0,
-    "inference_time": 65.38263404079883
+    "inference_time": 49.33942837957252
   },
   "0.6": {
     "precision": 0.6880316924340817,
@@ -33,7 +33,7 @@
     "fn": 13319,
     "total_images": 3624,
     "failed_images": 0,
-    "inference_time": 65.38263404079883
+    "inference_time": 49.33942837957252
   },
   "0.65": {
     "precision": 0.72287651312591,
@@ -45,7 +45,7 @@
     "fn": 13798,
     "total_images": 3624,
     "failed_images": 0,
-    "inference_time": 65.38263404079883
+    "inference_time": 49.33942837957252
   },
   "0.7": {
     "precision": 0.7585723410312772,
@@ -57,6 +57,6 @@
     "fn": 14249,
     "total_images": 3624,
     "failed_images": 0,
-    "inference_time": 65.38263404079883
+    "inference_time": 49.33942837957252
   }
 }

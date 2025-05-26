@@ -15,7 +15,7 @@ import time
 
 # Configuration
 EPOCH_30_MODEL = "output_stable_training/stable_model_epoch_30.pth"
-CONFIDENCE = 0.5  # Seuil optimal démontré (60.73% précision)
+CONFIDENCE = 0.55  # Seuil optimal démontré (60.73% précision)
 
 # Classes du modèle (28 classes) - Noms français
 CLASSES_FR = [
